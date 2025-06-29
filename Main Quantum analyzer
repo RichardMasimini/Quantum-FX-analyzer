@@ -1,0 +1,231 @@
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
+from kivy.uix.textinput import TextInput
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.button import Button
+from kivy.uix.spinner import Spinner
+from kivy.core.window import Window
+from kivy.graphics import Color, Line, Rectangle, Triangle
+from kivy.uix.widget import Widget
+import datetime
+
+Window.clearcolor = (0.05, 0.05, 0.05, 1)
+Window.size = (400, 900)
+
+class LiquidityPattern(Widget):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.pattern_data = None
+        self.bind(size=self.update_canvas)
+
+    def update_canvas(self, *args):
+        self.canvas.clear()
+        if not self.pattern_data:
+            return
+
+        entry, sl, tp1, tp2, tp3, signal, zone = self.pattern_data
+        width, height = self.size
+        padding = 20
+
+        with self.canvas:
+            Color(0.2, 0.2, 0.2, 0.5)
+            for i in range(1, 5):
+                Line(points=[0, height * i / 5, width, height * i / 5], width=0.5)
+                Line(points=[width * i / 5, 0, width * i / 5, height], width=0.5)
+
+            levels = [entry, sl, tp1, tp2, tp3]
+            min_level = min(levels)
+            max_level = max(levels)
+            level_range = max_level - min_level if max_level != min_level else 1
+
+            def price_to_y(price):
+                return padding + (price - min_level) / level_range * (height - 2 * padding)
+
+            self.draw_level(entry, 'ENTRY', (0, 1, 0), price_to_y, width)
+            self.draw_level(sl, 'SL', (1, 0, 0), price_to_y, width)
+            self.draw_level(tp1, 'TP1', (1, 1, 0), price_to_y, width)
+            self.draw_level(tp2, 'TP2', (1, 0.5, 0), price_to_y, width)
+            self.draw_level(tp3, 'TP3', (1, 0, 0), price_to_y, width)
+            self.draw_zone_indicators(zone, price_to_y(entry), width)
+            self.draw_prediction(entry, sl, tp1, tp2, tp3, signal, price_to_y, width, height)
+
+    def draw_level(self, price, label, color, converter, width):
+        y = converter(price)
+        Color(*color)
+        Line(points=[0, y, width, y], width=1.5)
+
+    def draw_zone_indicators(self, zone, entry_y, width):
+        if "High Liquidity" in zone:
+            Color(0, 0.5, 1, 0.3)
+            Rectangle(pos=(0, entry_y - 20), size=(width, 40))
+        elif "Trap Zone" in zone:
+            Color(1, 0, 0, 0.3)
+            Rectangle(pos=(0, entry_y - 15), size=(width, 30))
+        elif "Breakout Zone" in zone:
+            Color(0, 1, 0, 0.3)
+            Rectangle(pos=(0, entry_y - 10), size=(width, 20))
+
+    def draw_prediction(self, entry, sl, tp1, tp2, tp3, signal, converter, width, height):
+        arrow_size = 15
+        mid_x = width / 2
+        start_y = converter(entry)
+        end_y = converter(tp3)
+
+        if signal == "BUY":
+            Color(0, 1, 0, 0.7)
+            Line(points=[mid_x, start_y, mid_x, end_y], width=2)
+            Triangle(points=[mid_x, end_y, mid_x - arrow_size, end_y - arrow_size, mid_x + arrow_size, end_y - arrow_size])
+        elif signal == "SELL":
+            Color(1, 0, 0, 0.7)
+            Line(points=[mid_x, start_y, mid_x, end_y], width=2)
+            Triangle(points=[mid_x, end_y, mid_x - arrow_size, end_y + arrow_size, mid_x + arrow_size, end_y + arrow_size])
+
+class QuantumAnalyzer(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(orientation='vertical', spacing=10, padding=10, **kwargs)
+        self.scroll = ScrollView(size_hint=(1, 1))
+        self.content = BoxLayout(orientation='vertical', size_hint_y=None, spacing=10)
+        self.content.bind(minimum_height=self.content.setter('height'))
+        self.scroll.add_widget(self.content)
+        self.inputs = {}
+        self.selected_pair = None
+        self.add_inputs()
+
+        self.pattern_title = Label(
+            text="Liquidity Pattern Prediction", size_hint_y=None, height=30,
+            color=(0.5, 0.8, 1, 1)
+        )
+        self.content.add_widget(self.pattern_title)
+
+        self.pattern_widget = LiquidityPattern(size_hint_y=None, height=300)
+        self.content.add_widget(self.pattern_widget)
+
+        self.result_label = Label(
+            text="", size_hint_y=None, height=400,
+            color=(1, 1, 1, 1), halign='left', valign='top', markup=True
+        )
+        self.content.add_widget(self.result_label)
+
+        self.add_widget(self.scroll)
+
+    def add_inputs(self):
+        self.content.add_widget(Label(text="Select Pair", size_hint_y=None, height=30, color=(1, 1, 1, 1)))
+        self.pair_spinner = Spinner(
+            text='XAUUSD',
+            values=('XAUUSD', 'EURUSD', 'USDJPY', 'GBPUSD', 'USDCAD', 'AUDUSD', 'NZDUSD', 'NASDAQ', 'US30', 'BTCUSD'),
+            size_hint_y=None, height=44
+        )
+        self.content.add_widget(self.pair_spinner)
+
+        for label, key in [("Current Price", "price"), ("RSI", "rsi"), ("Williams %R", "williams")]:
+            self.content.add_widget(Label(text=label, size_hint_y=None, height=30, color=(1, 1, 1, 1)))
+            ti = TextInput(
+                hint_text=label, multiline=False, size_hint_y=None, height=40,
+                background_color=(0.1, 0.1, 0.1, 1), foreground_color=(1, 1, 1, 1)
+            )
+            self.inputs[key] = ti
+            self.content.add_widget(ti)
+
+        analyze_btn = Button(
+            text="🔍 Analyze Liquidity", size_hint_y=None, height=50,
+            background_color=(0, 0.5, 0.8, 1)
+        )
+        analyze_btn.bind(on_press=self.analyze)
+        self.content.add_widget(analyze_btn)
+
+    def get_trade_signal(self, rsi, williams):
+        if rsi < 33 and williams > 84:
+            return "BUY"
+        elif rsi > 74 and williams < 10:
+            return "SELL"
+        else:
+            return "HOLD"
+
+    def determine_trade_type(self, rsi, williams):
+        if (rsi < 30 or rsi > 75) or (williams > 90 or williams < 10):
+            return "LONG TERM"
+        else:
+            return "SHORT TERM"
+
+    def detect_order_block(self, price):
+        return " | 📦 Institutional Order Block" if round(price) % 5 == 0 else ""
+
+    def detect_fvg(self, price):
+        decimal = round(price % 1, 2)
+        return " | 🪫 Fair Value Gap (FVG)" if decimal < 0.05 or decimal > 0.95 else ""
+
+    def detect_liquidity_zone(self, price):
+        if str(price).endswith("00") or str(price).endswith("50"):
+            return "💧 High Liquidity Zone"
+        elif round(price % 1, 2) < 0.10 or round(price % 1, 2) > 0.90:
+            return "🕳 Trap Zone"
+        elif 0.10 < round(price % 1, 2) < 0.80:
+            return "🚪 Clean Breakout Zone"
+        return "Neutral"
+
+    def calculate_levels(self, entry, volatility, signal):
+        if signal == "BUY":
+            sl = entry - volatility
+            tp1 = entry + volatility
+            tp2 = entry + volatility * 1.618
+            tp3 = entry + volatility * 2.0
+        elif signal == "SELL":
+            sl = entry + volatility
+            tp1 = entry - volatility
+            tp2 = entry - volatility * 1.618
+            tp3 = entry - volatility * 2.0
+        else:
+            return None, None, None, None
+        return sl, tp1, tp2, tp3
+
+    def analyze(self, instance):
+        pair = self.pair_spinner.text.strip().upper()
+        try:
+            price = float(self.inputs['price'].text)
+            rsi = float(self.inputs['rsi'].text)
+            williams = float(self.inputs['williams'].text)
+        except:
+            self.result_label.text = "❌ Invalid input. Enter valid numbers."
+            self.pattern_widget.pattern_data = None
+            self.pattern_widget.update_canvas()
+            return
+
+        signal = self.get_trade_signal(rsi, williams)
+        trade_type = self.determine_trade_type(rsi, williams)
+        volatility = round(price * 0.002, 5)
+        sl, tp1, tp2, tp3 = self.calculate_levels(price, volatility, signal)
+        zone = self.detect_liquidity_zone(price)
+        ob = self.detect_order_block(price)
+        fvg = self.detect_fvg(price)
+
+        if signal == "HOLD":
+            self.result_label.text = "⚠️ No clear signal based on RSI & Williams %R."
+            self.pattern_widget.pattern_data = None
+            self.pattern_widget.update_canvas()
+            return
+
+        output = f"""
+[color=5CB3FF]📌 Pair:[/color] [b]{pair}[/b]
+[color=5CB3FF]🧠 Signal:[/color] [b]{signal}[/b]
+[color=5CB3FF]⏳ Type:[/color] [b]{trade_type}[/b]
+[color=5CB3FF]💧 Zone:[/color] [b]{zone}[/b]{ob}{fvg}
+[color=5CB3FF]📈 Entry:[/color] [b]{price:.5f}[/b]
+[color=5CB3FF]📉 SL:[/color] [b]{sl:.5f}[/b]
+[color=5CB3FF]🎯 TP1:[/color] [b]{tp1:.5f}[/b]
+[color=5CB3FF]🎯 TP2:[/color] [b]{tp2:.5f}[/b]
+[color=5CB3FF]🎯 TP3:[/color] [b]{tp3:.5f}[/b]
+[color=AAAAAA]🕒 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/color]
+"""
+
+        if "High Liquidity" in zone:
+            output += "\n[color=00FF00]📊 Pattern: Price likely to react strongly at this level[/color]"
+        elif "Trap Zone" in zone:
+            output += "\n[color=FF5555]📊 Pattern: Potential liquidity sweep before reversal[/color]"
+        elif "Breakout Zone" in zone:
+            output += "\n[color=55FFFF]📊 Pattern: High probability of clean breakout[/color]"
+        else:
+            output += "\n[color=AAAAAA]📊 Pattern: Neutral price action expected[/color]"
+
+        self.result_label.text = output
+        self.pattern_widget.pattern_data = (price, sl, tp1, tp2, tp3, signal, zone)
+        self.pattern_widget.update_canvas()
